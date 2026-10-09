@@ -10,12 +10,14 @@ import rospy
 import rosbag
 import argparse
 import numpy as np
+from cv_bridge import CvBridge
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("bag_dir", type=str)
+parser.add_argument("--bag_dir", type=str)
 parser.add_argument("--freq", type=float, default=10)
 args = parser.parse_args()
+bridge = CvBridge()
 
 
 files = glob.glob(os.path.join(args.bag_dir, "*.bag"))
@@ -35,8 +37,11 @@ for file in files:
     # topics = bag.get_type_and_topic_info()[1].keys()
     topics = [
         "/torobo/joint_states",
-        "/torobo/head/see3cam_left/camera/color/image_repub/compressed",
-        "/torobo/left_hand_controller/state",
+        "/torobo/right_hand_controller/state",
+        #"/torobo/head/sr300/camera/aligned_depth_to_color/image_raw/compressed",
+        #"/torobo/head/sr300/camera/depth/image_rect_raw",
+        "/torobo/head/sr300/camera/color/image_rect_color/compressed",
+        
     ]
 
     # Create a rospy.Time object to represent the current time
@@ -45,6 +50,7 @@ for file in files:
     joint_list = []
     finger_list = []
     image_list = []
+    depth_list = []
     finger_state_list = []
 
     prev_finger = None
@@ -57,24 +63,33 @@ for file in files:
 
         # Get the messages for each topic at the current time
         for topic in topics:
+            print(f"topic{topic}")
             for topic_msg, msg, time in bag.read_messages(
                 topic, start_time=current_time
             ):
                 if time >= current_time:
                     if topic == "/torobo/joint_states":
-                        joint_list.append(msg.position[7:14])
-
+                        joint_indices = [
+                            msg.name.index(f"right_arm/joint_{i}")
+                            for i in range(1, 8)
+                        ]
+                        joint_list.append([msg.position[i] for i in joint_indices])
                     if (
                         topic
-                        == "/torobo/head/see3cam_left/camera/color/image_repub/compressed"
+                        == "/torobo/head/sr300/camera/color/image_rect_color/compressed"
                     ):
-                        np_arr = np.frombuffer(msg.data, np.uint8)
-                        np_img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-                        np_img = np_img[::2, ::2]
-                        image_list.append(np_img[150:470, 110:430].astype(np.uint8))
-
-                    if topic == "/torobo/left_hand_controller/state":
-                        finger = np.array(msg.desired.positions[3])
+                        np_img = bridge.compressed_imgmsg_to_cv2(
+                            msg, desired_encoding="bgr8"
+                        )                        
+                        image_list.append(np_img.astype(np.uint8))
+                    if topic == "/torobo/head/sr300/camera/depth/image_rect_raw":
+                        np_depth = bridge.imgmsg_to_cv2(
+                            msg, desired_encoding="passthrough"
+                        ) 
+                        depth_list.append(np_depth.copy())
+                    if topic == "/torobo/right_hand_controller/state":
+                        finger_index = msg.joint_names.index("right_hand_first_finger/joint_1")
+                        finger = np.array(msg.desired.positions[finger_index])
                         if prev_finger is None:
                             prev_finger = finger
 
@@ -100,17 +115,24 @@ for file in files:
     finger = np.array(finger_list, dtype=np.float32)
     finger_state = np.array(finger_state_list, dtype=np.float32)
     images = np.array(image_list, dtype=np.uint8)
-
+    depths = np.array(depth_list)
     # Get shorter lenght
-    shorter_length = min(len(joints), len(images), len(finger), len(finger_state))
+    shorter_length = min(len(joints), len(images), len(finger),len(depths), len(finger_state))
 
+    print(f"images shape is {images.shape}")
+    print(f"joints shape is {joints.shape}")
+    print(f"finger shape is {finger.shape}")
+    print(f"depths shape is {depths.shape}")
+    print(f"finger_state shape is {finger_state.shape}")
+    
     # Trim
     joints = joints[:shorter_length]
     finger = finger[:shorter_length]
     images = images[:shorter_length]
+    depths = depths[:shorter_length]
     finger_state = finger_state[:shorter_length]
 
     # Save
     np.savez(
-        savename, joints=joints, finger=finger, finger_state=finger_state, images=images
+        savename, joints=joints, finger=finger, finger_state=finger_state, images=images, depths =depths,
     )
