@@ -13,12 +13,13 @@ import torch.optim as optim
 from collections import OrderedDict
 from torch.utils.tensorboard import SummaryWriter
 from eipl.model import SARNN
-from eipl.data import MultimodalDataset, SampleDownloader
+from eipl.data import MultimodalDataset, SampleDownloader, LocalSampleDownloader
 from eipl.utils import EarlyStopping, check_args, set_logdir, resize_img
 
 # load own library
-sys.path.append("./libs/")
-from fullBPTT import fullBPTTtrainer
+#sys.path.append(".eipl/tutorials/airec/libs/")
+breakpoint()
+from eipl.tutorials.airec.sarnn.libs.fullBPTT import fullBPTTtrainer
 
 # argument parser
 parser = argparse.ArgumentParser(
@@ -57,7 +58,7 @@ else:
 
 # load dataset
 minmax = [args.vmin, args.vmax]
-grasp_data = SampleDownloader("airec", "grasp_bottle", img_format="HWC")
+grasp_data = LocalSampleDownloader(data_path="../../ros/data/", img_format="HWC")
 images, joints = grasp_data.load_norm_data("train", vmin=args.vmin, vmax=args.vmax)
 images = resize_img(images, (64, 64))
 images = images.transpose(0, 1, 4, 2, 3)

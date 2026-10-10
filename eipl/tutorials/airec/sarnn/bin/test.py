@@ -9,7 +9,7 @@ import argparse
 import numpy as np
 import matplotlib.pylab as plt
 import matplotlib.animation as anim
-from eipl.data import SampleDownloader, WeightDownloader
+from eipl.data import SampleDownloader, WeightDownloader, LocalSampleDownloader
 from eipl.model import SARNN
 from eipl.utils import normalization
 from eipl.utils import restore_args, tensor2numpy, deprocess_img, resize_img
@@ -40,7 +40,7 @@ idx = int(args.idx)
 
 # load dataset
 minmax = [params["vmin"], params["vmax"]]
-grasp_data = SampleDownloader("airec", "grasp_bottle", img_format="HWC")
+grasp_data = LocalSampleDownloader(data_path="./data/test/", img_format="HWC")
 _images, _joints = grasp_data.load_raw_data("test")
 _images = resize_img(_images, (64, 64))
 images = _images[idx]
