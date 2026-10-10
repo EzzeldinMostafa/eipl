@@ -21,14 +21,14 @@ def load_data(dir):
     files.sort()
     for filename in files:
         print(filename)
-        npz_data = np.load(filename)
-
+        npz_data = np.load(filename, allow_pickle=True)
         images.append(resize_img(npz_data["images"], (128, 128)))
         finger_state = cos_interpolation(npz_data["finger_state"], expand_dims=True)
+        # shape 8 for AIREC 7 arm + one for the gripper like hand
         _joints = np.concatenate((npz_data["joints"], finger_state), axis=-1)
         joints.append(_joints)
         seq_length.append(len(_joints))
-
+    
     max_seq = max(seq_length)
     images = list_to_numpy(images, max_seq)
     joints = list_to_numpy(joints, max_seq)
@@ -37,13 +37,21 @@ def load_data(dir):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bag_dir", type=str)
+    args = parser.parse_args()
+
     # dataset index
-    train_list = [0, 1, 2, 3, 5, 6, 7, 8, 10, 11, 12, 13]
-    test_list = [4, 9, 14, 15, 16]
+    train_list = [0]# 1, 2, 3, 5, 6, 7, 8, 10, 11, 12, 13]
+    test_list = [0]#[4, 9, 14, 15, 16]
 
     # load data
-    images, joints = load_data("./bag/")
+    images, joints = load_data(args.bag_dir)
 
+    # check and mkdir
+    os.makedirs("./data/train/", exist_ok=True,)
+    os.makedirs("./data/test/", exist_ok=True,)
+    
     # save images and joints
     np.save("./data/train/images.npy", images[train_list].astype(np.uint8))
     np.save("./data/train/joints.npy", joints[train_list].astype(np.float32))
@@ -54,3 +62,6 @@ if __name__ == "__main__":
     joint_bounds = calc_minmax(joints)
     np.save("./data/joint_bounds.npy", joint_bounds)
     np.save("./data/joint_bounds.npy", joint_bounds)
+
+    print(f"images shape is {images[train_list].astype(np.uint8).shape}")
+    print(f"joints shape is {joints[train_list].astype(np.float32).shape}")

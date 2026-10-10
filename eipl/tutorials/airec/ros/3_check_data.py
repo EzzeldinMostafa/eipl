@@ -2,7 +2,7 @@
 # Copyright (c) Since 2023 Ogata Laboratory, Waseda University
 # Released under the MIT License.
 #
-
+import os
 import argparse
 import numpy as np
 import matplotlib.pylab as plt
@@ -73,4 +73,5 @@ def anim_update(i):
 
 
 ani = anim.FuncAnimation(fig, anim_update, interval=int(N / 10), frames=N)
+os.makedirs("./output", exist_ok=True)
 ani.save("./output/check_data_{}.gif".format(idx))

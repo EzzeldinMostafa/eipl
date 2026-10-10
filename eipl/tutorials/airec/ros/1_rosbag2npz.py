@@ -117,7 +117,7 @@ for file in files:
     images = np.array(image_list, dtype=np.uint8)
     depths = np.array(depth_list)
     # Get shorter lenght
-    shorter_length = min(len(joints), len(images), len(finger),len(depths), len(finger_state))
+    shorter_length = min(len(joints), len(images), len(finger), len(finger_state))
 
     print(f"images shape is {images.shape}")
     print(f"joints shape is {joints.shape}")
