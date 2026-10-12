@@ -23,7 +23,7 @@ bridge = CvBridge()
 files = glob.glob(os.path.join(args.bag_dir, "*.bag"))
 files.sort()
 for file in files:
-    print(file)
+    #print(file)
     savename = file.split(".bag")[0] + ".npz"
 
     # Open the rosbag file
@@ -41,6 +41,8 @@ for file in files:
         #"/torobo/head/sr300/camera/aligned_depth_to_color/image_raw/compressed",
         #"/torobo/head/sr300/camera/depth/image_rect_raw",
         "/torobo/head/sr300/camera/color/image_rect_color/compressed",
+        "/m3t_estimated_poses",
+        "/m3t_image_mask/compressed"
         
     ]
 
@@ -53,17 +55,21 @@ for file in files:
     depth_list = []
     finger_state_list = []
 
+    # moth adjustments
+    mask_list = []
+    pose_list =[]
+
     prev_finger = None
     finger_state = 0
 
     # Loop through the rosbag file at regular intervals (args.freq)
     freq = 1.0 / float(args.freq)
     while current_time.to_sec() < end_time:
-        print(current_time.to_sec())
+        #print(current_time.to_sec())
 
         # Get the messages for each topic at the current time
         for topic in topics:
-            print(f"topic{topic}")
+            #print(f"topic{topic}")
             for topic_msg, msg, time in bag.read_messages(
                 topic, start_time=current_time
             ):
@@ -101,12 +107,21 @@ for file in files:
 
                         finger_list.append(finger)
                         finger_state_list.append(finger_state)
+                    if topic == "/m3t_image_mask/compressed":
+                        np_img = bridge.compressed_imgmsg_to_cv2(msg, desired_encoding="bgr8")                        
+                        mask_list.append(np_img.astype(np.uint8))
+
+                    if topic == "/m3t_estimated_poses":
+                        pos_state = np.array([msg.poses[0].pose.position.x, msg.poses[0].pose.position.y, msg.poses[0].pose.position.z])
+                        q_state = np.array([msg.poses[0].pose.orientation.x, msg.poses[0].pose.orientation.y, msg.poses[0].pose.orientation.z, msg.poses[0].pose.orientation.w])
+                        pose_state = np.concatenate((pos_state, q_state), axis=0)
+                        pose_list.append(pose_state)
 
                     break
 
         # Wait for the next interval
         current_time += rospy.Duration.from_sec(freq)
-
+    
     # Close the rosbag file
     bag.close()
 
@@ -116,14 +131,29 @@ for file in files:
     finger_state = np.array(finger_state_list, dtype=np.float32)
     images = np.array(image_list, dtype=np.uint8)
     depths = np.array(depth_list)
-    # Get shorter lenght
-    shorter_length = min(len(joints), len(images), len(finger), len(finger_state))
+    masks = np.array(mask_list, dtype=np.uint8)
+    poses = np.array(pose_list, dtype=np.float32)
 
-    print(f"images shape is {images.shape}")
-    print(f"joints shape is {joints.shape}")
-    print(f"finger shape is {finger.shape}")
-    print(f"depths shape is {depths.shape}")
-    print(f"finger_state shape is {finger_state.shape}")
+    topic_list_len = [len(joints), len(images), len(finger), len(finger_state)]
+    
+    if any(["m3t" in t for t in topics]):
+        topic_list_len.extend([len(masks), len(poses)])
+    # Get shorter lenght
+    shorter_length = min(topic_list_len)
+    max_length = max(topic_list_len)
+
+    print(f"Min of file {file} is {shorter_length} and max is {max_length}")
+
+    if shorter_length == 0:
+        raise Exception("shortest length is zero. check input data")
+
+    #print(f"images shape is {images.shape}")
+    #print(f"joints shape is {joints.shape}")
+    #print(f"finger shape is {finger.shape}")
+    #print(f"depths shape is {depths.shape}")
+    #print(f"finger_state shape is {finger_state.shape}")
+    #print(f"masks shape is {masks.shape}")
+    #print(f"poses shape is {poses.shape}")
     
     # Trim
     joints = joints[:shorter_length]
@@ -131,8 +161,12 @@ for file in files:
     images = images[:shorter_length]
     depths = depths[:shorter_length]
     finger_state = finger_state[:shorter_length]
+    masks = masks[:shorter_length]
+    poses = poses[:shorter_length]
+
 
     # Save
     np.savez(
-        savename, joints=joints, finger=finger, finger_state=finger_state, images=images, depths =depths,
+        savename, joints=joints, finger=finger, finger_state=finger_state, 
+        images=images, depths =depths, poses=poses, masks=masks
     )

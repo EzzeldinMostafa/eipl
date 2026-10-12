@@ -214,6 +214,36 @@ class LocalSampleDownloader(SampleDownloader):
     def _load_data(self, data_type):
         joints = np.load(os.path.join(self.data_dir, data_type, "joints.npy"))
         images = np.load(os.path.join(self.data_dir, data_type, "images.npy"))
+        
+        masks, poses = None, None
+        if "masks.npy" in os.listdir(os.path.join(self.data_dir, data_type)):
+            masks = np.load(os.path.join(self.data_dir, data_type, "masks.npy"))
+        if "poses.npy" in os.listdir(os.path.join(self.data_dir, data_type)):
+            poses = np.load(os.path.join(self.data_dir, data_type, "poses.npy"))
         if self.img_format == "CHW":
             images = images.transpose(0, 1, 4, 2, 3)
-        return images, joints
+
+        return images, joints, masks, poses
+
+    def load_norm_data(self, data_type="train", vmin=0.1, vmax=0.9):
+        """Loads data with normalization to a specified range.
+        Args:
+            data_type (Optional[string]): Default is train
+            vmin (Optional[float]): Lower limit of normalized data
+            vmax (Optional[float]): Upper limit of normalized data
+
+        Returns:
+            images (numpy.array): The images data, expected to be a 5D array [data_num, seq_num, channel, height, width].
+            joints (numpy.array): The joints data, expected to be a 3D array [data_num, seq_num, joint_dim].
+        """
+        images_raw, joints_raw, masks, poses = self._load_data(data_type)
+        images = normalization(images_raw.astype(np.float32), (0.0, 255.0), (0.0, 1.0))
+        joints = normalization(
+            joints_raw.astype(np.float32), self.joint_bounds, (vmin, vmax)
+        )
+
+        if masks is not None:
+            masks = normalization(masks.astype(np.float32), (0.0, 255.0), (0.0, 1.0))
+        #if poses is not None:
+
+        return images, joints, masks, poses 

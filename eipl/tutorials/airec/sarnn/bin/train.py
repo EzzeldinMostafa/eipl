@@ -18,7 +18,6 @@ from eipl.utils import EarlyStopping, check_args, set_logdir, resize_img
 
 # load own library
 #sys.path.append(".eipl/tutorials/airec/libs/")
-breakpoint()
 from eipl.tutorials.airec.sarnn.libs.fullBPTT import fullBPTTtrainer
 
 # argument parser
@@ -42,6 +41,9 @@ parser.add_argument("--vmax", type=float, default=1.0)
 parser.add_argument("--device", type=int, default=0)
 parser.add_argument("--compile", action="store_true")
 parser.add_argument("--tag", help="Tag name for snap/log sub directory")
+parser.add_argument("--path", type=str, help="Folder path to the train and test data")
+parser.add_argument("--pos_as_mask", action="store_true", help="Input the pose through the mask")
+parser.add_argument("--pos_as_state", action="store_true", help="Input the pose through the state encoder")
 args = parser.parse_args()
 
 # check args
@@ -58,19 +60,30 @@ else:
 
 # load dataset
 minmax = [args.vmin, args.vmax]
-grasp_data = LocalSampleDownloader(data_path="../../ros/data/", img_format="HWC")
-images, joints = grasp_data.load_norm_data("train", vmin=args.vmin, vmax=args.vmax)
+grasp_data = LocalSampleDownloader(data_path=args.path, img_format="HWC")
+images, joints, masks, poses = grasp_data.load_norm_data("train", vmin=args.vmin, vmax=args.vmax)
 images = resize_img(images, (64, 64))
 images = images.transpose(0, 1, 4, 2, 3)
-train_dataset = MultimodalDataset(images, joints, device=device, stdev=stdev)
+
+if masks is not None:
+    masks = masks[..., None]
+    masks = resize_img(masks, (64, 64))
+    masks = masks.transpose(0, 1, 4, 2, 3)
+
+train_dataset = MultimodalDataset(images=images, joints=joints, masks=masks, poses=poses, device=device, stdev=stdev, pos_as_mask=args.pos_as_mask, pos_as_state=args.pos_as_state)
 train_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False
 )
 
-images, joints = grasp_data.load_norm_data("test", vmin=args.vmin, vmax=args.vmax)
+images, joints, masks, poses = grasp_data.load_norm_data( "test", vmin=args.vmin, vmax=args.vmax)
 images = resize_img(images, (64, 64))
 images = images.transpose(0, 1, 4, 2, 3)
-test_dataset = MultimodalDataset(images, joints, device=device, stdev=None)
+if masks is not None:
+    masks = masks[..., None]
+    masks = resize_img(masks, (64, 64))
+    masks = masks.transpose(0, 1, 4, 2, 3)
+
+test_dataset = MultimodalDataset(images=images, joints=joints, masks=masks, poses=poses, device=device, stdev=None, pos_as_mask=args.pos_as_mask, pos_as_state=args.pos_as_state)
 test_loader = torch.utils.data.DataLoader(
     test_dataset,
     batch_size=args.batch_size,
@@ -85,6 +98,8 @@ model = SARNN(
     k_dim=args.k_dim,
     heatmap_size=args.heatmap_size,
     temperature=args.temperature,
+    pos_as_mask=args.pos_as_mask,
+    pos_as_state=args.pos_as_state
 )
 
 # torch.compile makes PyTorch code run faster
