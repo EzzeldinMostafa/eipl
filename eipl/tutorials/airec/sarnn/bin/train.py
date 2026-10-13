@@ -44,6 +44,7 @@ parser.add_argument("--tag", help="Tag name for snap/log sub directory")
 parser.add_argument("--path", type=str, help="Folder path to the train and test data")
 parser.add_argument("--pos_as_mask", action="store_true", help="Input the pose through the mask")
 parser.add_argument("--pos_as_state", action="store_true", help="Input the pose through the state encoder")
+parser.add_argument("--img_resize", type=int, help="additional image resize", default=64)
 args = parser.parse_args()
 
 # check args
@@ -62,12 +63,12 @@ else:
 minmax = [args.vmin, args.vmax]
 grasp_data = LocalSampleDownloader(data_path=args.path, img_format="HWC")
 images, joints, masks, poses = grasp_data.load_norm_data("train", vmin=args.vmin, vmax=args.vmax)
-images = resize_img(images, (64, 64))
+images = resize_img(images, (args.img_resize, args.img_resize))
 images = images.transpose(0, 1, 4, 2, 3)
 
 if masks is not None:
     masks = masks[..., None]
-    masks = resize_img(masks, (64, 64))
+    masks = resize_img(masks, (args.img_resize, args.img_resize))
     masks = masks.transpose(0, 1, 4, 2, 3)
 
 train_dataset = MultimodalDataset(images=images, joints=joints, masks=masks, poses=poses, device=device, stdev=stdev, pos_as_mask=args.pos_as_mask, pos_as_state=args.pos_as_state)
@@ -76,11 +77,11 @@ train_loader = torch.utils.data.DataLoader(
 )
 
 images, joints, masks, poses = grasp_data.load_norm_data( "test", vmin=args.vmin, vmax=args.vmax)
-images = resize_img(images, (64, 64))
+images = resize_img(images, (args.img_resize, args.img_resize))
 images = images.transpose(0, 1, 4, 2, 3)
 if masks is not None:
     masks = masks[..., None]
-    masks = resize_img(masks, (64, 64))
+    masks = resize_img(masks, (args.img_resize, args.img_resize))
     masks = masks.transpose(0, 1, 4, 2, 3)
 
 test_dataset = MultimodalDataset(images=images, joints=joints, masks=masks, poses=poses, device=device, stdev=None, pos_as_mask=args.pos_as_mask, pos_as_state=args.pos_as_state)
@@ -97,6 +98,7 @@ model = SARNN(
     joint_dim=8,
     k_dim=args.k_dim,
     heatmap_size=args.heatmap_size,
+    im_size=[args.img_resize, args.img_resize],
     temperature=args.temperature,
     pos_as_mask=args.pos_as_mask,
     pos_as_state=args.pos_as_state
