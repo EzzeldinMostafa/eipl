@@ -208,6 +208,9 @@ def run_offline_inference(model, images, joints, joint_bounds, minmax, command_r
         img_t = normalization(img_t, (0, 255), minmax)
         #joint_t = torch.Tensor(np.expand_dims(joints[loop_ct], 0))
         #joint_t = normalization(joint_t, joint_bounds, minmax)
+        while ANGLE.size == 0 or TORQUE.size==0:
+            print("Waiting for ROS callback")
+            rospy.sleep(0.1)
         _joint_t = np.concatenate([ANGLE, TORQUE], axis=0)
         joint_t = torch.Tensor(np.expand_dims(_joint_t, 0))
         joint_t = normalization(_joint_t, joint_bounds, minmax)
@@ -223,7 +226,8 @@ def run_offline_inference(model, images, joints, joint_bounds, minmax, command_r
         pred_joint = normalization(pred_joint, minmax, joint_bounds)
     
         if loop_ct:
-            input("Send to robot")
+            if step_by_step:
+                input("Send to robot")
             publish_joint_trajectory(
                 publisher = impedance_publisher,
                 joint_names = ['right_arm/joint_1', 
@@ -249,7 +253,6 @@ def main():
     parser.add_argument("--idx", type=int, default=0, help="Select the test data sequence")
     parser.add_argument("--img-size", type=int, default=128, help="Image size :D ")
     parser.add_argument("--joint-dims", type=int, default=8, help="Number of joints of the robot")
-    parser.add_argument("--input_param", type=float, default=0.8) # TODO what are you???
     parser.add_argument("--offline", type=bool, default=False, action="store_true", help="If set to true a path to offline recorded data is needed and used instead of real camera data.")
     parser.add_argument("--debug", type=bool, default=False, action="store_true", help="Press enter before sending data to robot.")
     parser.add_argument("--data-path", type=str, default=None, help="Path to offline data")
