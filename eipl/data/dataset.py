@@ -98,7 +98,7 @@ class MultimodalDataset(Dataset):
         stdev (float, optional): Set the standard deviation for normal distribution to generate noise.
     """
 
-    def __init__(self, images, joints, device="cpu", stdev=None):
+    def __init__(self, images, joints, masks, poses, device="cpu", stdev=None, pos_as_mask=False, pos_as_state=False):
         """
         The constructor of Multimodal Dataset class. Initializes the images, joints, and transformation.
 
@@ -106,9 +106,13 @@ class MultimodalDataset(Dataset):
             images (numpy array): The images data, expected to be a 5D array [data_num, seq_num, channel, height, width].
             joints (numpy array): The joints data, expected to be a 3D array [data_num, seq_num, joint_dim].
             stdev (float, optional): The standard deviation for the normal distribution to generate noise. Defaults to 0.02.
+
+        
         """
         self.stdev = stdev
         self.device = device
+        self.pos_as_mask = pos_as_mask
+        self.pos_as_state = pos_as_state
         self.images = torch.Tensor(images).to(self.device)
         self.joints = torch.Tensor(joints).to(self.device)
         self.transform = nn.Sequential(
@@ -118,6 +122,11 @@ class MultimodalDataset(Dataset):
             transforms.ColorJitter(hue=[0.0, 0.04]),
             transforms.ColorJitter(saturation=[0.6, 1.4]),
         ).to(self.device)
+
+        if pos_as_mask:
+            self.masks = torch.Tensor(masks).to(self.device)
+        if pos_as_state:
+            self.poses = torch.Tensor(poses).to(self.device)
 
     def __len__(self):
         """
@@ -140,6 +149,11 @@ class MultimodalDataset(Dataset):
         y_img = self.images[idx]
         y_joint = self.joints[idx]
 
+        if self.pos_as_mask:
+            x_masks = self.masks[idx]
+        if self.pos_as_state:
+            x_poses = self.poses[idx]
+
         if self.stdev is not None:
             x_img = self.transform(y_img) + torch.normal(
                 mean=0, std=0.02, size=x_img.shape, device=self.device
@@ -147,6 +161,20 @@ class MultimodalDataset(Dataset):
             x_joint = y_joint + torch.normal(
                 mean=0, std=self.stdev, size=y_joint.shape, device=self.device
             )
+            if self.pos_as_mask:
+                x_masks = x_masks + torch.normal(
+                mean=0, std=0.02, size=x_masks.shape, device=self.device
+            )
+            if self.pos_as_state:
+                x_poses = x_poses + torch.normal(
+                mean=0, std=self.stdev, size=x_poses.shape, device=self.device
+            )
+
+        if self.pos_as_mask:
+            x_img = torch.cat([x_img, x_masks], dim=1)
+
+        if self.pos_as_state:
+            x_joint = torch.cat([x_joint, x_poses], dim=-1)
 
         return [[x_img, x_joint], [y_img, y_joint]]
 

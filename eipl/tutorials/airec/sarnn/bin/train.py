@@ -13,12 +13,12 @@ import torch.optim as optim
 from collections import OrderedDict
 from torch.utils.tensorboard import SummaryWriter
 from eipl.model import SARNN
-from eipl.data import MultimodalDataset, SampleDownloader
+from eipl.data import MultimodalDataset, SampleDownloader, LocalSampleDownloader
 from eipl.utils import EarlyStopping, check_args, set_logdir, resize_img
 
 # load own library
-sys.path.append("./libs/")
-from fullBPTT import fullBPTTtrainer
+#sys.path.append(".eipl/tutorials/airec/libs/")
+from eipl.tutorials.airec.sarnn.libs.fullBPTT import fullBPTTtrainer
 
 # argument parser
 parser = argparse.ArgumentParser(
@@ -41,6 +41,10 @@ parser.add_argument("--vmax", type=float, default=1.0)
 parser.add_argument("--device", type=int, default=0)
 parser.add_argument("--compile", action="store_true")
 parser.add_argument("--tag", help="Tag name for snap/log sub directory")
+parser.add_argument("--path", type=str, help="Folder path to the train and test data")
+parser.add_argument("--pos_as_mask", action="store_true", help="Input the pose through the mask")
+parser.add_argument("--pos_as_state", action="store_true", help="Input the pose through the state encoder")
+parser.add_argument("--img_resize", type=int, help="additional image resize", default=64)
 args = parser.parse_args()
 
 # check args
@@ -57,19 +61,30 @@ else:
 
 # load dataset
 minmax = [args.vmin, args.vmax]
-grasp_data = SampleDownloader("airec", "grasp_bottle", img_format="HWC")
-images, joints = grasp_data.load_norm_data("train", vmin=args.vmin, vmax=args.vmax)
-images = resize_img(images, (64, 64))
+grasp_data = LocalSampleDownloader(data_path=args.path, img_format="HWC")
+images, joints, masks, poses = grasp_data.load_norm_data("train", vmin=args.vmin, vmax=args.vmax)
+images = resize_img(images, (args.img_resize, args.img_resize))
 images = images.transpose(0, 1, 4, 2, 3)
-train_dataset = MultimodalDataset(images, joints, device=device, stdev=stdev)
+
+if masks is not None:
+    masks = masks[..., None]
+    masks = resize_img(masks, (args.img_resize, args.img_resize))
+    masks = masks.transpose(0, 1, 4, 2, 3)
+
+train_dataset = MultimodalDataset(images=images, joints=joints, masks=masks, poses=poses, device=device, stdev=stdev, pos_as_mask=args.pos_as_mask, pos_as_state=args.pos_as_state)
 train_loader = torch.utils.data.DataLoader(
     train_dataset, batch_size=args.batch_size, shuffle=True, drop_last=False
 )
 
-images, joints = grasp_data.load_norm_data("test", vmin=args.vmin, vmax=args.vmax)
-images = resize_img(images, (64, 64))
+images, joints, masks, poses = grasp_data.load_norm_data( "test", vmin=args.vmin, vmax=args.vmax)
+images = resize_img(images, (args.img_resize, args.img_resize))
 images = images.transpose(0, 1, 4, 2, 3)
-test_dataset = MultimodalDataset(images, joints, device=device, stdev=None)
+if masks is not None:
+    masks = masks[..., None]
+    masks = resize_img(masks, (args.img_resize, args.img_resize))
+    masks = masks.transpose(0, 1, 4, 2, 3)
+
+test_dataset = MultimodalDataset(images=images, joints=joints, masks=masks, poses=poses, device=device, stdev=None, pos_as_mask=args.pos_as_mask, pos_as_state=args.pos_as_state)
 test_loader = torch.utils.data.DataLoader(
     test_dataset,
     batch_size=args.batch_size,
@@ -83,7 +98,10 @@ model = SARNN(
     joint_dim=8,
     k_dim=args.k_dim,
     heatmap_size=args.heatmap_size,
+    im_size=[args.img_resize, args.img_resize],
     temperature=args.temperature,
+    pos_as_mask=args.pos_as_mask,
+    pos_as_state=args.pos_as_state
 )
 
 # torch.compile makes PyTorch code run faster

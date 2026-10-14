@@ -165,3 +165,85 @@ class WeightDownloader(Downloader):
 
         # download data
         self._download_tar_files(data_dict[robot][task])
+
+
+class LocalSampleDownloader(SampleDownloader):
+    """Load sample datasets from a local directory, or download them if no path is given.
+
+    Expected layout under `data_path`:
+        joint_bounds.npy
+        train/images.npy, train/joints.npy
+        test/images.npy,  test/joints.npy
+
+    !!! example "Example usage"
+
+```py
+        # Use local files, no robot/task needed
+        data = LocalSampleDownloader(data_path="/path/to/grasp_bottle")
+
+        # Download to the default cache, then load
+        data = LocalSampleDownloader("airec", "grasp_bottle")
+```
+
+    Arguments:
+        robot (Optional[string]): Required only when data_path is None.
+        task (Optional[string]): Required only when data_path is None.
+        img_format (string): "CHW" or "HWC".
+        data_path (Optional[string]): Directory containing the npy files.
+    """
+
+    def __init__(self, robot=None, task=None, img_format="CHW", data_path=None):
+        self.img_format = img_format
+
+        if data_path is not None:
+            self.data_dir = os.path.abspath(data_path)
+            if not self._check_exists(os.path.join(self.data_dir, "joint_bounds.npy")):
+                raise FileNotFoundError(f"joint_bounds.npy not found in {self.data_dir}")
+            self.joint_bounds = self._load_bounds()
+        else:
+            if robot is None or task is None:
+                raise ValueError("Pass robot and task, or pass data_path.")
+            # Set before the parent constructor, which loads data immediately.
+            # Matches the parent's download location.
+            self.data_dir = os.path.join(os.path.expanduser("~"), ".eipl", robot, task)
+            super().__init__(robot, task, img_format=img_format)
+
+    def _load_bounds(self):
+        return np.load(os.path.join(self.data_dir, "joint_bounds.npy"))
+
+    def _load_data(self, data_type):
+        joints = np.load(os.path.join(self.data_dir, data_type, "joints.npy"))
+        images = np.load(os.path.join(self.data_dir, data_type, "images.npy"))
+        
+        masks, poses = None, None
+        if "masks.npy" in os.listdir(os.path.join(self.data_dir, data_type)):
+            masks = np.load(os.path.join(self.data_dir, data_type, "masks.npy"))
+        if "poses.npy" in os.listdir(os.path.join(self.data_dir, data_type)):
+            poses = np.load(os.path.join(self.data_dir, data_type, "poses.npy"))
+        if self.img_format == "CHW":
+            images = images.transpose(0, 1, 4, 2, 3)
+
+        return images, joints, masks, poses
+
+    def load_norm_data(self, data_type="train", vmin=0.1, vmax=0.9):
+        """Loads data with normalization to a specified range.
+        Args:
+            data_type (Optional[string]): Default is train
+            vmin (Optional[float]): Lower limit of normalized data
+            vmax (Optional[float]): Upper limit of normalized data
+
+        Returns:
+            images (numpy.array): The images data, expected to be a 5D array [data_num, seq_num, channel, height, width].
+            joints (numpy.array): The joints data, expected to be a 3D array [data_num, seq_num, joint_dim].
+        """
+        images_raw, joints_raw, masks, poses = self._load_data(data_type)
+        images = normalization(images_raw.astype(np.float32), (0.0, 255.0), (0.0, 1.0))
+        joints = normalization(
+            joints_raw.astype(np.float32), self.joint_bounds, (vmin, vmax)
+        )
+
+        if masks is not None:
+            masks = normalization(masks.astype(np.float32), (0.0, 255.0), (0.0, 1.0))
+        #if poses is not None:
+
+        return images, joints, masks, poses 

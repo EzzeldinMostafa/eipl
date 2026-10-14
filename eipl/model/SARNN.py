@@ -35,6 +35,8 @@ class SARNN(nn.Module):
         heatmap_size=0.1,
         kernel_size=3,
         im_size=[64, 64],
+        pos_as_mask=False,
+        pos_as_state=False
     ):
         super(SARNN, self).__init__()
 
@@ -48,9 +50,15 @@ class SARNN(nn.Module):
         self.temperature = temperature
         self.heatmap_size = heatmap_size
 
+        # increase input channels as pose is incorportated as concat channel
+        if pos_as_mask:
+            im_enc_inp_sz = 4
+        else:
+            im_enc_inp_sz = 3
+
         # Positional Encoder
         self.pos_encoder = nn.Sequential(
-            nn.Conv2d(3, 16, 3, 1, 0),  # Convolutional layer 1
+            nn.Conv2d(im_enc_inp_sz, 16, 3, 1, 0),  # Convolutional layer 1
             activation,
             nn.Conv2d(16, 32, 3, 1, 0),  # Convolutional layer 2
             activation,
@@ -63,10 +71,10 @@ class SARNN(nn.Module):
                 normalized=True,
             ),  # Spatial Softmax layer
         )
-
+       
         # Image Encoder
         self.im_encoder = nn.Sequential(
-            nn.Conv2d(3, 16, 3, 1, 0),  # Convolutional layer 1
+            nn.Conv2d(im_enc_inp_sz, 16, 3, 1, 0),  # Convolutional layer 1
             activation,
             nn.Conv2d(16, 32, 3, 1, 0),  # Convolutional layer 2
             activation,
@@ -75,6 +83,8 @@ class SARNN(nn.Module):
         )
 
         rec_in = joint_dim + self.k_dim * 2
+        if pos_as_state:
+            rec_in += 7 # 3 translation + 4 rot as quaternion (wxyz)
         self.rec = nn.LSTMCell(rec_in, rec_dim)  # LSTM cell
 
         # Joint Decoder

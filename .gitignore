@@ -75,6 +75,14 @@ instance/
 # Sphinx documentation
 docs/_build/
 
+
+eipl/tutorials/airec/ros/data/
+eipl/tutorials/airec/ros/checkpoints/
+eipl/tutorials/airec/ros/output/
+eipl/tutorials/airec/sarnn/bin/log/
+
+
+
 # PyBuilder
 .pybuilder/
 target/
