@@ -42,7 +42,7 @@ In moth, we want to feed the output of M3T tracker to eipl.
 We start with a vanilla eipl approach using only right arm joint angles, 1D hand state and images
 
 Input:
-- joints (8: `n_joints`)
+- joints (8: `n_joints`) (7 for the arm and the last one for the hand-as-gripper)
 - images (128x128/64x64x3/`img_size`x`img_size`x`n_channels`)
 
 Ouput:
@@ -203,6 +203,8 @@ run the code
 ```
 python3 3_check_data.py 
 ```
+
+To train, check the script `cd /eipl/tutorials/airec/sarnn/bin/ && train.py` and add the path to the data with `--path` to the root of your data folder. We extend the `SARNN` model to incorporate the 6D pose of `M3T` with the flags `pos_as_state` and `pos_as_mask`. The former extend the robot state by concatenating the `[t, q]` to the input vector. We normalize the translational part by the first translation. Quaternion are normalized to unit quats. In eipl fashion we predict the next 6D pose by learning `t` with `MSE` and `q` with a `Chordal` loss. In case we set `pos_as_mask` the 6D pose is incorporated as a binary mask of the target image by concating to the input rgb image. Analogously, we predict the next timestamp's mask and learn with `BCEBCEWithLogitsLoss`. 
 
 
 
