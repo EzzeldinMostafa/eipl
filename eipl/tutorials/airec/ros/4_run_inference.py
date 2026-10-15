@@ -28,25 +28,27 @@ from PIL import Image as PILImage
 # ROS packages
 import rospy
 from torobo_sensor_msgs.msg import ToroboState
-from sensor_msgs.msg import Image
+from sensor_msgs.msg import Image, JointState
 from std_msgs.msg import Float64MultiArray, Bool
 from trajectory_msgs.msg import JointTrajectoryPoint, JointTrajectory
 
 from eipl.model.SARNN import SARNN
 from eipl.utils.data import normalization
 from eipl.utils.data import tensor2numpy, deprocess_img
-from eipl.data import SampleDownloader
+from eipl.data import LocalSampleDownloader
 from eipl.utils import resize_img
 
 # GLOBAL VARS
 TOPIC_NAME_position = '/torobo/online_joint_trajectory_controller/command'
 TOPIC_NAME_impedance = '/torobo/online_joint_impedance_controller/command'
-ANGLE = np.array([])
+TOPIC_NAME_image = '/torobo/head/sr300/camera/color/image_rect_color'
+TOPIC_NAME_joint_state = '/torobo/joint_states'
+JOINTS = np.array([])
 TORQUE = np.array([])
 IMAGE_RGB = None
 
 JOINT_NAMES = [
-    f"right_arm/joint{i}" for i in range(1,8)
+    f"right_arm/joint_{i}" for i in range(1,8)
 ]
 
 
@@ -73,11 +75,12 @@ def publish_position(q_target, position_publisher):
     msg.joint_names = JOINT_NAMES
 
     point = JointTrajectoryPoint()
-    point.posiitons = q_target.tolist()
+    point.positions = q_target.tolist()
     point.time_from_start = rospy.Duration(0,0)
     
     msg.points = [point]
     position_publisher.publish(msg)
+    rospy.loginfo("Published JointTrajectoryPoint to robot")
 
 def rosimg_to_bgr(msg: Image) -> np.ndarray:
     """
@@ -181,21 +184,26 @@ def check_joint_in_range(pred_joint, limit_joint_ranges):
             if joint_range[0] <= pred_joint[i] <= joint_range[1]:
                 continue 
             else:
-                print("joint_false")
+                rospy.logwarn("joint_false")
                 return False 
     return True
 
 
-def angle_sensor_callback(data):
-    global ANGLE
+def angle_sensor_callback(msg):
+    global JOINTS
     global TORQUE
-    ang = data.link_position
-    tor = data.link_effort
-    ang = np.array(ang)
-    tor = np.array(tor)
-    ANGLE = np.concatenate((ang[10:17],ang[31:38]))
-    TORQUE = np.concatenate((tor[10:17],tor[31:38]))
+    joint_map = dict(zip(msg.name, msg.position))
+    if all([True for key in list(joint_map.keys()) if key in JOINT_NAMES]):
+        rospy.logdebug("All joints received and available")
+        JOINTS = np.array([joint_map[name] for name in JOINT_NAMES])
+        JOINTS = np.concatenate((JOINTS, np.array([0.0])), axis=0)
+        assert(JOINTS.size == 8 and JOINTS[-1]==0)
+        return
+    rospy.logdebug(msg.position)
+    rospy.logdebug(msg)
+    rospy.logwarn("Unexpected message format received in joint callback")
 
+ 
 def camera_right_callback(msg):
     global IMAGE_RGB
     try:
@@ -208,8 +216,12 @@ def camera_right_callback(msg):
         rospy.logerr(err)
 
 
-def run_offline_inference(model, images, joints, joint_bounds, minmax, command_rate, impedance_publisher, position_publisher, step_by_step=False):
-    print("Offline mode")
+def run_offline_inference(model, images, joints, joint_bounds, minmax, impedance_publisher, position_publisher, step_by_step=False):
+    global JOINTS
+    global TORQUE
+    global IMAGE_RGB
+    
+    rospy.loginfo("Starting inference in offline mode, using images from stored data")
     ########## Loading data ##########
     original_images_multiple = []
 
@@ -219,7 +231,7 @@ def run_offline_inference(model, images, joints, joint_bounds, minmax, command_r
     attn_list = []
     state = None 
 
-    r = rospy.Rate(command_rate)
+    r = rospy.Rate(5)
 
     # Inference
     nloop = len(images)
@@ -230,11 +242,11 @@ def run_offline_inference(model, images, joints, joint_bounds, minmax, command_r
         img_t = normalization(img_t, (0, 255), minmax)
         #joint_t = torch.Tensor(np.expand_dims(joints[loop_ct], 0))
         #joint_t = normalization(joint_t, joint_bounds, minmax)
-        while ANGLE.size == 0 or TORQUE.size==0:
-            print("Waiting for ROS callback")
+        while JOINTS.size == 0:
+            #print("Waiting for ROS callback")
             rospy.sleep(0.1)
-        _joint_t = np.concatenate([ANGLE, TORQUE], axis=0)
-        joint_t = torch.Tensor(np.expand_dims(_joint_t, 0))
+        #_joint_t = np.concatenate([JOINTS, TORQUE], axis=0)
+        _joint_t = torch.Tensor(np.expand_dims(JOINTS, 0))
         joint_t = normalization(_joint_t, joint_bounds, minmax)
 
         # predict rnn
@@ -248,41 +260,41 @@ def run_offline_inference(model, images, joints, joint_bounds, minmax, command_r
         pred_joint = normalization(pred_joint, minmax, joint_bounds)
     
         if loop_ct:
-            if(pred_joint.shape!=(7,)) or not np.all(np.isfinite(pred_joint)):
+            if(pred_joint.shape!=(8,)) or not np.all(np.isfinite(pred_joint)):
                 rospy.logerr("Invalid EIPL prediction")
                 raise RuntimeError(f"pred_joints invalid: {pred_joint}")
+            # conservative example: do not allow jumps
+            max_step = 0.02
+            q_safe = JOINTS + np.clip(pred_joint-JOINTS, -max_step, max_step)
+            rospy.loginfo(f"Clipped joint values delta within range {max_step} to\n {q_safe}")
+            cv2.imshow("predicted image", pred_image)
+            cv2.waitKey(1)
             if step_by_step:
-                print(pred_joint)
-                print(pred_joint.shape)
-                input("Send to robot")
+                input("Send to robot? <Press Enter>")
 
-            publish_joint_trajectory(
-                        publisher = impedance_publisher,
-                        joint_names = ['right_arm/joint_1', 
-                                        'right_arm/joint_2', 
-                                        'right_arm/joint_3', 
-                                        'right_arm/joint_4', 
-                                        'right_arm/joint_5', 
-                                        'right_arm/joint_6', 
-                                        'right_arm/joint_7'],
-                        positions = [pred_joint[6], pred_joint[13]],
-                        time_from_start = 1
-                    )
-            publish_position(pred_joint, position_publisher=position_publisher)
+            #publish_joint_trajectory(
+            #            publisher = impedance_publisher,
+            #            joint_names = JOINT_NAMES,
+            #            positions = [pred_joint[6], pred_joint[13]],
+            #           time_from_start = 1
+            #        )
+            publish_position(q_safe, position_publisher=position_publisher)
 
             
             r.sleep()
-    ANGLE = np.array([])
+    JOINTS = np.array([])
     TORQUE = np.array(joint_list)
 
   
 def main():
+    global IMAGE_RGB
+
     # argument parser
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--checkpoint-path", type=str, default=None, help="Path to EIPL checkpoint")
     parser.add_argument("--idx", type=int, default=0, help="Select the test data sequence")
-    parser.add_argument("--img-size", type=int, default=64, help="Image size :D ")
+    parser.add_argument("--img-size", type=int, default=128, help="Image size :D ")
     parser.add_argument("--joint-dims", type=int, default=8, help="Number of joints of the robot")
     parser.add_argument("--offline", default=True, action="store_true", help="If set to true a path to offline recorded data is needed and used instead of real camera data.")
     parser.add_argument("--debug", default=True, action="store_true", help="Press enter before sending data to robot.")
@@ -316,17 +328,17 @@ def main():
     )
 
     # load weight
-    ckpt = torch.load(args.checkpoint_path, map_location=torch.device("cuda"), weights_only=False) # CPU
-    print("model is loaded")
+    ckpt = torch.load(args.checkpoint_path, map_location=torch.device("cpu"), weights_only=False) # CPU
+    rospy.loginfo("model is loaded")
     model_sarnn.load_state_dict(ckpt["model_state_dict"])
     model_sarnn.eval() 
-    model_sarnn.to("cuda")    
+    model_sarnn.to("cpu")    
 
     # ROS Setup
     try:
         rospy.init_node('eipl_inference_node', anonymous=True)
-        rospy.Subscriber("/torobo/head/sr300/camera/color/image_rect_color", Image, camera_right_callback)
-        rospy.Subscriber("/torobo/torobo_states", ToroboState, angle_sensor_callback)
+        rospy.Subscriber(TOPIC_NAME_image, Image, camera_right_callback)
+        rospy.Subscriber(TOPIC_NAME_joint_state, JointState, angle_sensor_callback)
 
     except rospy.ROSInterruptException as e:
         print(e)
@@ -335,11 +347,11 @@ def main():
     pub_pos = rospy.Publisher(TOPIC_NAME_position, JointTrajectory, queue_size=1)
     pub_imp = rospy.Publisher(TOPIC_NAME_impedance, JointTrajectory, queue_size=1)
 
-    while IMAGE_RGB is None and not rospy.is_shutdown():
+    while IMAGE_RGB is None:
         # wait for next image from AIREC
-        print(f"Waiting for first image")
-        rospy.sleep(0.05)
-    print("Receive first image")
+        rospy.logwarn(f"Waiting for first image from {TOPIC_NAME_image}")
+        rospy.sleep(0.5)
+    rospy.loginfo("Receive first image")
 
     # OFFLINE mode
     if args.offline:
@@ -348,20 +360,16 @@ def main():
         
         # load dataset
         minmax = [params["vmin"], params["vmax"]]
-        grasp_data = SampleDownloader("airec", "grasp_bottle", img_format="HWC")
-        _images, _joints = grasp_data.load_raw_data("test")
-        _images = resize_img(_images, (args.image, args.image))
+        grasp_data = LocalSampleDownloader(data_path=args.data_path, img_format="HWC")
+        _images, _joints, _masks, _poses = grasp_data.load_raw_data("test")
+        _images = resize_img(_images, (args.img_size, args.img_size))
         images = _images[args.idx]
         joints = _joints[args.idx]
-        joint_bounds = grasp_data.joint_bounds
-        print(
-            "images shape:{}, min={}, max={}".format(images.shape, images.min(), images.max())
-        )
-        print(
-            "joints shape:{}, min={}, max={}".format(joints.shape, joints.min(), joints.max())
-        )
+        masks = _masks[args.idx]
+        poses = _poses[args.idx]
+        joint_bounds = grasp_data._load_bounds()
 
-        run_offline_inference(model_sarnn, images, joints, joint_bounds, minmax, impedance_publisher=pub_imp, step_by_step=args.step_by_step, position_publisher=pub_pos)
+        run_offline_inference(model_sarnn, images, joints, joint_bounds, minmax, impedance_publisher=pub_imp, step_by_step=args.debug, position_publisher=pub_pos)
 
 
 if __name__ == "__main__":
