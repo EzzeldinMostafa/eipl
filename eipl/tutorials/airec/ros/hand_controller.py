@@ -60,7 +60,3 @@ class HandClient:
             return
         pose = np.clip(self.hand_t + diff * self.scale * (self.hand_max - self.hand_min), self.hand_min, self.hand_max)
         self.__command(pose)
-
-if __name__ == "__main__":    
-
-    rospy.init_node('hand_controller', anonymous=True, disable_signals=True)

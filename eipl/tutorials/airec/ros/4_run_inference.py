@@ -55,26 +55,9 @@ JOINT_NAMES = [
 ]
 HAND_NAME = 'right_hand_first_finger/joint_1'
 
-
-
-def publish_joint_trajectory(publisher: rospy.Publisher, joint_names: List[str], positions:List[float], time_from_start:float):
-
-    # Creates a message.
-    trajectory = JointTrajectory()
-    trajectory.header.stamp = rospy.Time.now()
-    trajectory.joint_names = joint_names
-    point = JointTrajectoryPoint()
-    point.positions = positions
-    point.velocities = [0.0] * len(joint_names)
-    point.accelerations = [0.0] * len(joint_names)
-    point.effort = [0.0] * len(joint_names)
-    point.time_from_start = rospy.Duration(time_from_start)
-    trajectory.points.append(point)
-
-    # Publish the message.
-    publisher.publish(trajectory)
-
 def publish_position(q_target, position_publisher, hand_pub):
+    global JOINT_NAMES
+
     msg = JointTrajectory()
     msg.header.stamp = rospy.Time.now()
     msg.joint_names = JOINT_NAMES
