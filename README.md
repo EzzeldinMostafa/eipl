@@ -205,4 +205,25 @@ python3 3_check_data.py
 ```
 
 
+#### 3. 4_run_inference.py
+
+In one test case the ROS node running the inference was not recognized with the correct IP from the running the roscore.
+`ping SimPC` could not resolve the hostname and the ros node did not register with its ip address.
+The hostname `SimPC` and its IP needed to be added to `/etc/hosts`.
+
+In general it is possible to test the node setup with `rosnode list` to get the node name and `rosnode info <your-node>` to view all configuration info.
+
+The inference can run in different modes: *online* or *offline*.
+In each mode the flag `--debug` can be set, when the script asks for user input before commanding any poses to the robot.
+
+In *offline* mode the images are loaded from data provided by the `--data-path` param. The joint values are taken from the running system.
+This mode can be used to check the inference performance in "free air", since we do not need the experiment setup.
+
+In *online* mode the images and joints are both taken from the running robot.
+
+*Current Status*
+The robot only moved downwards for the online mode inference. We have not found a single source of error.
+Possbile debug starting points could be:
+- Check the mapping of the inferred joint values with the command. Is it the correct order?
+- Do we use the correct joint bounds? They are currently guessed.
 
