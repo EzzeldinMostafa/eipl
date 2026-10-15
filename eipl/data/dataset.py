@@ -151,8 +151,10 @@ class MultimodalDataset(Dataset):
 
         if self.pos_as_mask:
             x_masks = self.masks[idx]
+            y_mask = self.masks[idx]
         if self.pos_as_state:
             x_poses = self.poses[idx]
+            y_poses = self.poses[idx]
 
         if self.stdev is not None:
             x_img = self.transform(y_img) + torch.normal(
@@ -172,9 +174,11 @@ class MultimodalDataset(Dataset):
 
         if self.pos_as_mask:
             x_img = torch.cat([x_img, x_masks], dim=1)
+            y_img = torch.cat([y_img, y_mask], dim=1)
 
         if self.pos_as_state:
             x_joint = torch.cat([x_joint, x_poses], dim=-1)
+            y_joint = torch.cat([y_joint, y_poses], dim=-1)
 
         return [[x_img, x_joint], [y_img, y_joint]]
 
