@@ -22,7 +22,7 @@ class SARNN(nn.Module):
         temperature (float, optional): The temperature parameter for the softmax function.
         heatmap_size (float, optional): The size of the heatmap in the InverseSpatialSoftmax layer.
         kernel_size (int, optional): The size of the convolutional kernel.
-        activation (str, optional): The name of activation function.
+        self.activation (str, optional): The name of self.activation function.
         im_size (list, optional): The size of the input image [height, width].
     """
 
@@ -41,7 +41,9 @@ class SARNN(nn.Module):
         super(SARNN, self).__init__()
 
         self.k_dim = k_dim
-        activation = nn.LeakyReLU(negative_slope=0.3)
+        self.pos_as_mask = pos_as_mask
+        self.pos_as_state = pos_as_state
+        self.activation = nn.LeakyReLU(negative_slope=0.3)
 
         sub_im_size = [
             im_size[0] - 3 * (kernel_size - 1),
@@ -59,11 +61,11 @@ class SARNN(nn.Module):
         # Positional Encoder
         self.pos_encoder = nn.Sequential(
             nn.Conv2d(im_enc_inp_sz, 16, 3, 1, 0),  # Convolutional layer 1
-            activation,
+            self.activation,
             nn.Conv2d(16, 32, 3, 1, 0),  # Convolutional layer 2
-            activation,
+            self.activation,
             nn.Conv2d(32, self.k_dim, 3, 1, 0),  # Convolutional layer 3
-            activation,
+            self.activation,
             SpatialSoftmax(
                 width=sub_im_size[0],
                 height=sub_im_size[1],
@@ -75,27 +77,33 @@ class SARNN(nn.Module):
         # Image Encoder
         self.im_encoder = nn.Sequential(
             nn.Conv2d(im_enc_inp_sz, 16, 3, 1, 0),  # Convolutional layer 1
-            activation,
+            self.activation,
             nn.Conv2d(16, 32, 3, 1, 0),  # Convolutional layer 2
-            activation,
+            self.activation,
             nn.Conv2d(32, self.k_dim, 3, 1, 0),  # Convolutional layer 3
-            activation,
+            self.activation,
         )
 
         rec_in = joint_dim + self.k_dim * 2
-        if pos_as_state:
+        if self.pos_as_state:
             rec_in += 7 # 3 translation + 4 rot as quaternion (wxyz)
         self.rec = nn.LSTMCell(rec_in, rec_dim)  # LSTM cell
 
         # Joint Decoder
         self.decoder_joint = nn.Sequential(
-            nn.Linear(rec_dim, joint_dim), activation
-        )  # Linear layer and activation
+            nn.Linear(rec_dim, joint_dim), self.activation
+        )  # Linear layer and self.activation
 
         # Point Decoder
         self.decoder_point = nn.Sequential(
-            nn.Linear(rec_dim, self.k_dim * 2), activation
-        )  # Linear layer and activation
+            nn.Linear(rec_dim, self.k_dim * 2), self.activation
+        )  # Linear layer and self.activation
+
+        # Pose Decoder
+        if self.pos_as_state:
+            self.decoder_pose = nn.Sequential(
+                nn.Linear(rec_dim, 7), self.activation
+            )  # Linear layer and self.activation
 
         # Inverse Spatial Softmax
         self.issm = InverseSpatialSoftmax(
@@ -110,11 +118,10 @@ class SARNN(nn.Module):
             nn.ConvTranspose2d(
                 self.k_dim, 32, 3, 1, 0
             ),  # Transposed Convolutional layer 1
-            activation,
+            self.activation,
             nn.ConvTranspose2d(32, 16, 3, 1, 0),  # Transposed Convolutional layer 2
-            activation,
-            nn.ConvTranspose2d(16, 3, 3, 1, 0),  # Transposed Convolutional layer 3
-            activation,
+            self.activation,
+            nn.ConvTranspose2d(16, im_enc_inp_sz, 3, 1, 0),  # Transposed Convolutional layer 3
         )
 
         self.apply(self._weights_init)
@@ -175,6 +182,19 @@ class SARNN(nn.Module):
         dec_pts_in = dec_pts.reshape(-1, self.k_dim, 2)
         heatmap = self.issm(dec_pts_in)  # Inverse Spatial Softmax
         hid = torch.mul(heatmap, im_hid)  # Multiply heatmap with image feature `im_hid`
+        img_logits = self.decoder_image(hid)# Decode image
+        
+        add_ret_tuple =  ()
+        if self.pos_as_mask:
+           mask_logits = img_logits[:,-1,...]
+           img_logits = img_logits[:, :-1,...]
+           add_ret_tuple += (mask_logits, )
 
-        y_image = self.decoder_image(hid)  # Decode image
-        return y_image, y_joint, enc_pts, dec_pts, rnn_hid
+        if self.pos_as_state:
+            poses = self.decoder_pose(rnn_hid[0])
+            add_ret_tuple += (poses, )
+
+        y_image = self.activation(img_logits)  
+        ret_tuple = (y_image, y_joint, enc_pts, dec_pts, rnn_hid)
+        ret_tuple += add_ret_tuple
+        return ret_tuple 

@@ -244,6 +244,11 @@ class LocalSampleDownloader(SampleDownloader):
 
         if masks is not None:
             masks = normalization(masks.astype(np.float32), (0.0, 255.0), (0.0, 1.0))
-        #if poses is not None:
+        if poses is not None:
+            scale = 1. # thing about changing this one
+            poses = poses.astype(np.float32)
+            trans = (poses[:,:,:3] - poses[:,0,:3][:,None,:]) / scale 
+            quat = poses[:,:, 3:] / np.linalg.norm(poses[:, :, 3:], axis=-1, keepdims=True)
+            poses = np.concat((trans, quat), axis=-1)
 
         return images, joints, masks, poses 

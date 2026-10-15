@@ -128,8 +128,14 @@ with tqdm(range(args.epoch)) as pbar_epoch:
         train_loss = trainer.process_epoch(train_loader)
         with torch.no_grad():
             test_loss = trainer.process_epoch(test_loader, training=False)
-        writer.add_scalar("Loss/train_loss", train_loss, epoch)
-        writer.add_scalar("Loss/test_loss", test_loss, epoch)
+        if isinstance(train_loss, dict):
+            for k, v in train_loss.items():
+                writer.add_scalar(f"train/{k}", v, epoch)
+            train_loss = train_loss["total_loss"]
+        if isinstance(test_loss, dict):
+            for k, v in test_loss.items():
+                writer.add_scalar(f"test/{k}", v, epoch)
+            test_loss = test_loss["total_loss"]
 
         # early stop
         save_ckpt, _ = early_stop(test_loss)
