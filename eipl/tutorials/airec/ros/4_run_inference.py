@@ -38,7 +38,6 @@ from eipl.utils import resize_img
 # GLOBAL VARS
 bridge = CvBridge()
 TOPIC_NAME_position = '/torobo/online_joint_trajectory_controller/command'
-TOPIC_NAME_impedance = '/torobo/online_joint_impedance_controller/command'
 TOPIC_NAME_image = '/torobo/head/sr300/camera/color/image_rect_color'
 TOPIC_NAME_joint_state = '/torobo/joint_states'
 JOINTS = np.array([])
@@ -77,6 +76,7 @@ def publish_position(q_target, position_publisher):
     point.time_from_start = rospy.Duration(0,0)
     
     msg.points = [point]
+    print(msg)
     position_publisher.publish(msg)
     rospy.loginfo("Published JointTrajectoryPoint to robot")
 
@@ -128,7 +128,7 @@ def run_offline_inference(model, images, joint_bounds, minmax, position_publishe
     _, joint_list = [], []
     state = None 
 
-    r = rospy.Rate(5)
+    r = rospy.Rate(1)
 
     # Inference
     nloop = len(images)
@@ -164,10 +164,9 @@ def run_offline_inference(model, images, joint_bounds, minmax, position_publishe
             max_step = 0.02
             q_safe = JOINTS + np.clip(pred_joint-JOINTS, -max_step, max_step)
             rospy.loginfo(f"Clipped joint values delta within range {max_step} to\n {q_safe}")
-          
+            cv2.imshow("predicted image", pred_image)
+            cv2.waitKey(1)
             if step_by_step:  
-                cv2.imshow("predicted image", pred_image)
-                cv2.waitKey(1)
                 input("Send to robot? <Press Enter>")
             publish_position(q_safe, position_publisher=position_publisher)
 
@@ -183,7 +182,7 @@ def run_online_inference(model, joint_bounds, minmax, position_publisher, img_re
     
     rospy.loginfo("Starting inference in ONLINE mode: DANGER!!!")
     state = None 
-    r = rospy.Rate(5)
+    r = rospy.Rate(1)
 
     while not rospy.is_shutdown():
         # load data and normalization
@@ -221,9 +220,9 @@ def run_online_inference(model, joint_bounds, minmax, position_publisher, img_re
         max_step = 0.02
         q_safe = JOINTS + np.clip(pred_joint-JOINTS, -max_step, max_step)
         rospy.loginfo(f"Clipped joint values delta within range {max_step} to\n {q_safe}")
+        cv2.imshow("predicted image", pred_image)
+        cv2.waitKey(1)
         if step_by_step:
-            cv2.imshow("predicted image", pred_image)
-            cv2.waitKey(1)
             input("Send to robot? <Press Enter>")
         publish_position(q_safe, position_publisher=position_publisher)
 
@@ -243,7 +242,7 @@ def main():
     parser.add_argument("--img-size", type=int, default=128, help="Image size :D ")
     parser.add_argument("--joint-dims", type=int, default=8, help="Number of joints of the robot")
     parser.add_argument("--offline", default=False, action="store_true", help="If set to true a path to offline recorded data is needed and used instead of real camera data.")
-    parser.add_argument("--debug", default=True, action="store_true", help="Press enter before sending data to robot.")
+    parser.add_argument("--debug", default=False, action="store_true", help="Press enter before sending data to robot.")
     parser.add_argument("--data-path", type=str, default=None, help="Path to offline data")
     args = parser.parse_args()
 
@@ -282,10 +281,10 @@ def main():
 
     # ROS Setup
     try:
-        rospy.init_node('eipl_inference_node', anonymous=True)
+        rospy.init_node('eipl_inference_node', anonymous=False)
         rospy.Subscriber(TOPIC_NAME_image, Image, camera_right_callback)
         rospy.Subscriber(TOPIC_NAME_joint_state, JointState, angle_sensor_callback)
-        pub_pos = rospy.Publisher(TOPIC_NAME_position, JointTrajectory, queue_size=1)
+        pub_pos = rospy.Publisher(TOPIC_NAME_position, JointTrajectory, queue_size=10)
 
     except rospy.ROSInterruptException as e:
         print(e)
