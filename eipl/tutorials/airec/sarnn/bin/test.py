@@ -10,6 +10,17 @@ import numpy as np
 import matplotlib.pylab as plt
 import matplotlib.animation as anim
 import torch
+import sys
+import numpy.core as _core
+import importlib
+# Alias every numpy.core submodule under the numpy._core name
+for name in ["multiarray", "numeric", "umath", "fromnumeric", "_internal",
+             "_multiarray_umath", "_methods", "records", "shape_base"]:
+    try:
+        sys.modules[f"numpy._core.{name}"] = importlib.import_module(f"numpy.core.{name}")
+    except ImportError:
+        pass
+sys.modules["numpy._core"] = _core
 import torch.nn as nn
 from eipl.data import SampleDownloader, WeightDownloader, LocalSampleDownloader
 from eipl.model import SARNN
