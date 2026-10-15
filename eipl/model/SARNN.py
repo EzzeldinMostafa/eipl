@@ -102,7 +102,7 @@ class SARNN(nn.Module):
         # Pose Decoder
         if self.pos_as_state:
             self.decoder_pose = nn.Sequential(
-                nn.Linear(rec_dim, 1), self.activation
+                nn.Linear(rec_dim, 7), self.activation
             )  # Linear layer and self.activation
 
         # Inverse Spatial Softmax
@@ -182,10 +182,19 @@ class SARNN(nn.Module):
         dec_pts_in = dec_pts.reshape(-1, self.k_dim, 2)
         heatmap = self.issm(dec_pts_in)  # Inverse Spatial Softmax
         hid = torch.mul(heatmap, im_hid)  # Multiply heatmap with image feature `im_hid`
-        img_logits = decoder_image(hid)# Decode image
+        img_logits = self.decoder_image(hid)# Decode image
+        
+        add_ret_tuple =  ()
         if self.pos_as_mask:
-           img_logits = img_logits[..., :-1]
-           mask_logits = img_logits[..., -1]
- 
+           mask_logits = img_logits[:,-1,...]
+           img_logits = img_logits[:, :-1,...]
+           add_ret_tuple += (mask_logits, )
+
+        if self.pos_as_state:
+            poses = self.decoder_pose(rnn_hid[0])
+            add_ret_tuple += (poses, )
+
         y_image = self.activation(img_logits)  
-        return y_image, y_joint, enc_pts, dec_pts, rnn_hid
+        ret_tuple = (y_image, y_joint, enc_pts, dec_pts, rnn_hid)
+        ret_tuple += add_ret_tuple
+        return ret_tuple 
