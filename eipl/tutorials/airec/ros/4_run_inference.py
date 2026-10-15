@@ -41,7 +41,6 @@ TOPIC_NAME_position = '/torobo/online_joint_trajectory_controller/command'
 TOPIC_NAME_image = '/torobo/head/sr300/camera/color/image_rect_color'
 TOPIC_NAME_joint_state = '/torobo/joint_states'
 JOINTS = np.array([])
-TORQUE = np.array([])
 IMAGE_RGB = None
 
 JOINT_NAMES = [
@@ -76,7 +75,6 @@ def publish_position(q_target, position_publisher):
     point.time_from_start = rospy.Duration(0,0)
     
     msg.points = [point]
-    print(msg)
     position_publisher.publish(msg)
     rospy.loginfo("Published JointTrajectoryPoint to robot")
 
@@ -95,7 +93,6 @@ def check_cuda():
 
 def angle_sensor_callback(msg):
     global JOINTS
-    global TORQUE
     joint_map = dict(zip(msg.name, msg.position))
     if all([True for key in list(joint_map.keys()) if key in JOINT_NAMES]):
         rospy.logdebug("All joints received and available")
@@ -121,7 +118,6 @@ def camera_right_callback(msg):
 
 def run_offline_inference(model, images, joint_bounds, minmax, position_publisher, step_by_step=False):
     global JOINTS
-    global TORQUE
     global IMAGE_RGB
     
     rospy.loginfo("Starting inference in offline mode, using images from stored data")
@@ -142,7 +138,6 @@ def run_offline_inference(model, images, joint_bounds, minmax, position_publishe
         while JOINTS.size == 0:
             rospy.logwarn(f"Waiting for joint state informatio from {TOPIC_NAME_joint_state}")
             rospy.sleep(0.1)
-        #_joint_t = np.concatenate([JOINTS, TORQUE], axis=0)
         _joint_t = torch.Tensor(np.expand_dims(JOINTS, 0))
         joint_t = normalization(_joint_t, joint_bounds, minmax)
 
@@ -173,11 +168,10 @@ def run_offline_inference(model, images, joint_bounds, minmax, position_publishe
             
             r.sleep()
     JOINTS = np.array([])
-    TORQUE = np.array(joint_list)
+
 
 def run_online_inference(model, joint_bounds, minmax, position_publisher, img_resize, step_by_step=False):
     global JOINTS
-    global TORQUE
     global IMAGE_RGB
     
     rospy.loginfo("Starting inference in ONLINE mode: DANGER!!!")
@@ -199,7 +193,6 @@ def run_online_inference(model, joint_bounds, minmax, position_publisher, img_re
         while JOINTS.size == 0:
             rospy.logwarn(f"Waiting for joint state informatio from {TOPIC_NAME_joint_state}")
             rospy.sleep(0.1)
-        #_joint_t = np.concatenate([JOINTS, TORQUE], axis=0)
         _joint_t = torch.Tensor(np.expand_dims(JOINTS, 0))
         joint_t = normalization(_joint_t, joint_bounds, minmax)
 
