@@ -53,7 +53,7 @@ def check_cuda():
 class EiplInferenceHandler:
 
     def __init__(self, loaded_model: SARNN, step_by_step: bool, img_resize: int, minmax: List[int],
-                 joint_bounds: np.ndarray = np.array([0.1, 0.9])):
+                 joint_bounds: np.ndarray):
         self.cv_bridge = CvBridge()
 
         # model configuration
@@ -61,7 +61,7 @@ class EiplInferenceHandler:
         self.step_by_step: bool = step_by_step
         self.img_resize: int = img_resize
         self.minmax: List[int] = minmax
-        self.joint_bounds = joint_bounds  # TODO joint_bounds are magic numbers for online mode!
+        self.joint_bounds = joint_bounds
         self.eipl_model_state = None
 
         # topics
@@ -76,7 +76,7 @@ class EiplInferenceHandler:
 
         # Robot State
         self.current_joint_values_arm: np.ndarray = np.array([])
-        self.current_hand_state: int = 0  # open: 1, close: 0
+        self.current_hand_state: int = 0  # TODO open: 1, close: 0 ??
         self.current_joint_value_hand: None | float = None
         self.current_rgb_image: None | np.ndarray = None
 
@@ -317,7 +317,8 @@ def main():
 
     eipl_inference_handler = EiplInferenceHandler(loaded_model=model_sarnn, step_by_step=args.debug,
                                                   img_resize=args.img_size,
-                                                  minmax=minmax, joint_bounds=np.array([0.1, 0.9]))
+                                                  minmax=minmax,
+                                                  joint_bounds=np.array([0.1, 0.9]))  # TODO correct joint bounds??
 
     if args.offline:
         # OFFLINE mode, overrides joint_bounds
