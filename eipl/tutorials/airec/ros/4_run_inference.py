@@ -52,15 +52,15 @@ def check_cuda():
 
 class EiplInferenceHandler:
 
-    def __init__(self, loaded_model: SARNN, step_by_step: bool, img_resize: int, minmax,
+    def __init__(self, loaded_model: SARNN, step_by_step: bool, img_resize: int, minmax: List[int],
                  joint_bounds: np.ndarray = np.array([0.1, 0.9])):
         self.cv_bridge = CvBridge()
 
         # model configuration
-        self.eipl_model = loaded_model
-        self.step_by_step = step_by_step
-        self.img_resize = img_resize
-        self.minmax = minmax
+        self.eipl_model: SARNN = loaded_model
+        self.step_by_step: bool = step_by_step
+        self.img_resize: int = img_resize
+        self.minmax: List[int] = minmax
         self.joint_bounds = joint_bounds  # TODO joint_bounds are magic numbers for online mode!
         self.eipl_model_state = None
 
@@ -75,10 +75,10 @@ class EiplInferenceHandler:
         self.joint_name_index_finger = 'right_hand_first_finger/joint_1'
 
         # Robot State
-        self.current_joint_values_arm = np.array([])
-        self.current_hand_state = 0  # open: 1, close: 0
+        self.current_joint_values_arm: np.ndarray = np.array([])
+        self.current_hand_state: int = 0  # open: 1, close: 0
         self.current_joint_value_hand: None | float = None
-        self.current_rgb_image = None
+        self.current_rgb_image: None | np.ndarray = None
 
         # ROS
         self.arm_position_publisher = None
@@ -142,7 +142,10 @@ class EiplInferenceHandler:
         rospy.logdebug(msg)
         rospy.logwarn("Unexpected message format received in joint callback")
 
-    def compute_hand_state(self, previous_joint_value_hand: float):
+    def compute_hand_state(self, previous_joint_value_hand: float | None):
+        if previous_joint_value_hand is None:
+            raise RuntimeError(
+                "Compute hand state function args mismatch: `previous_joint_value_hand` is None but should be assigned a float value.")
         if self.current_joint_value_hand - previous_joint_value_hand > 0.005 and self.current_hand_state == 0:
             self.current_hand_state = 1
         elif previous_joint_value_hand - self.current_joint_value_hand > 0.005 and self.current_hand_state == 1:
@@ -151,7 +154,7 @@ class EiplInferenceHandler:
     def hand_state_callback(self, msg: JointTrajectoryControllerState):
         finger_index = msg.joint_names.index(self.joint_name_index_finger)
         previous_joint_value_hand = self.current_joint_value_hand
-        self.current_joint_value_hand = np.array(msg.desired.positions[finger_index])
+        self.current_joint_value_hand = msg.desired.positions[finger_index]
         if previous_joint_value_hand is None:
             previous_joint_value_hand = self.current_joint_value_hand
 
@@ -241,10 +244,8 @@ class EiplInferenceHandler:
             assert (self.current_hand_state == 0 or self.current_hand_state == 1)
             joints_and_hand = np.append(self.current_joint_values_arm, self.current_hand_state)
 
-            # predict rnn
+            # predict with EIPL
             self.run_inference(img_t=img_t, joint_t=joints_and_hand)
-
-        self.reset_robot_state()
 
     def run_online_inference(self):
         rospy.loginfo("Starting inference in ONLINE mode: DANGER!!!")
@@ -291,7 +292,7 @@ def main():
     # EIPL INFERENCE SCRIPT
     # restore parameters
     dir_name = os.path.split(args.checkpoint_path)[0]  # get parent path of checkpoint file
-    hyperparam_filename = os.path.join(dir_name, "args.json")  # data.json is generated when training
+    hyperparam_filename = os.path.join(str(dir_name), "args.json")  # data.json is generated when training
     with open(hyperparam_filename) as f:
         params = json.load(f)
 
