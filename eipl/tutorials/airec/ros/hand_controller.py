@@ -10,7 +10,6 @@ from trajectory_msgs.msg import JointTrajectoryPoint, JointTrajectory
 class HandClient:
     def __init__(self, namespace, side):
         self.side = side
-        self.hand_t = None
 
         TOPIC_NAME = namespace + "/" + self.side + '_hand_controller/command'
         self.publisher = rospy.Publisher(TOPIC_NAME, JointTrajectory, queue_size=1)
@@ -18,6 +17,7 @@ class HandClient:
         self.hand_min  = np.deg2rad([ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0])
         self.hand_max =  np.deg2rad([76.0, 16.10, 50.0, 45.9, 58.5, 52.5])
         self.scale = 0.05
+        self.max_effort = 0.5
 
         # Create JointTrajectory message
         self.trajectory = self.__create_joint_trajectory_base()
@@ -43,6 +43,7 @@ class HandClient:
     def __command(self, pose):
         self.trajectory.header.stamp = rospy.Time.now()
         self.trajectory.points[0].positions = pose.tolist()
+        self.trajectory.points[0].effort = [self.max_effort] * len(pose)
         self.publisher.publish(self.trajectory)
 
     def __create_joint_trajectory_base(self):
@@ -50,13 +51,13 @@ class HandClient:
         trajectory = JointTrajectory()
         trajectory.header.stamp = rospy.Time.now()
         point = JointTrajectoryPoint()
-        point.time_from_start = rospy.Time(0)
+        point.time_from_start = rospy.Duration(0)
         trajectory.points.append(point)
 
         return trajectory 
     
-    def update(self, diff):
-        if self.hand_t is None or diff == 0.0:
-            return
-        pose = np.clip(self.hand_t + diff * self.scale * (self.hand_max - self.hand_min), self.hand_min, self.hand_max)
-        self.__command(pose)
+    def set_open(self):
+        self.__command(self.hand_min)
+        
+    def set_close(self):
+        self.__command(self.hand_max)
