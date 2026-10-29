@@ -15,7 +15,7 @@ class HandClient:
         self.publisher = rospy.Publisher(TOPIC_NAME, JointTrajectory, queue_size=1)
             
         self.hand_min  = np.deg2rad([ 0.0,  0.0,  0.0,  0.0,  0.0,  0.0])
-        self.hand_max =  np.deg2rad([76.0, 16.10, 50.0, 45.9, 58.5, 52.5])
+        self.hand_max =  np.deg2rad([30.0, 48.0, 52.5, 34.0, 15.0, 18.0])
         self.scale = 0.05
         self.max_effort = 0.5
 
