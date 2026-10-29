@@ -52,7 +52,7 @@ def check_cuda():
 class EiplInferenceHandler:
 
     def __init__(self, loaded_model: SARNN, step_by_step: bool, img_resize: int, minmax: List[int],
-                 joint_bounds: np.ndarray):
+                 joint_bounds: np.ndarray, alpha: float):
         self.cv_bridge = CvBridge()
 
         # model configuration
@@ -62,6 +62,7 @@ class EiplInferenceHandler:
         self.minmax: List[int] = minmax
         self.joint_bounds = joint_bounds
         self.eipl_model_state = None
+        self.alpha = alpha #blending factor (0-> full prediction / 1-> full sensing)
 
         # topics
         self.topic_name_arm_position = '/torobo/online_joint_trajectory_controller/command'
@@ -76,6 +77,8 @@ class EiplInferenceHandler:
         self.current_joint_values_arm: np.ndarray = np.array([])
         self.current_hand_state: int = 0  # vanilla eipl sets open:0 and close:1
         self.current_rgb_image: None | np.ndarray = None
+        self.last_y_image = None
+        self.last_y_joint = None
 
         # ROS
         self.arm_position_publisher = None
@@ -165,9 +168,19 @@ class EiplInferenceHandler:
         joint_t = torch.Tensor(np.expand_dims(joint_t, 0))
         joint_t = normalization(joint_t, self.joint_bounds, self.minmax)
 
+        # do alpha blending before pass
+        if self.last_y_image is not None:
+            img_t   = self.alpha * img_t   + (1.0 - self.alpha) * self.last_y_image
+            joint_t = self.alpha * joint_t + (1.0 - self.alpha) * self.last_y_joint
+
         # predict rnn
         print(f"input joints {joint_t}")
         y_image, y_joint, _enc_pts, _dec_pts, state = self.eipl_model.forward(img_t, joint_t, self.eipl_model_state)
+
+        # save predicted for next pass
+        self.last_y_image = y_image.detach()
+        self.last_y_joint = y_joint.detach()
+        self.eipl_model_state = state
 
         # denormalization
         pred_image = tensor2numpy(y_image[0])  # first prediction in time
@@ -209,10 +222,9 @@ class EiplInferenceHandler:
         _joints = _joints[load_index]
         masks = _masks[load_index]
         poses = _poses[load_index]
-        self.joint_bounds = grasp_data._load_bounds()
 
         # Inference
-        for loop_ct in range(images):
+        for loop_ct in range(len(images)):
             # load data and normalization
             img_t = images[loop_ct]
 
@@ -260,6 +272,7 @@ def main():
                         help="If set to true a path to offline recorded data is needed and used instead of real camera data.")
     parser.add_argument("--debug", default=False, action="store_true", help="Press enter before sending data to robot.")
     parser.add_argument("--data-path", type=str, default=None, help="Path to offline data")
+    parser.add_argument("--alpha", type=float, default=0.6, help="Blending factor")
     args = parser.parse_args()
 
     try:
@@ -294,15 +307,20 @@ def main():
     model_sarnn.to("cpu")
     print("Loaded model")
 
+    # both modes require training data to extract joint bounds
+    if not args.data_path:
+        raise RuntimeError("Path to offline dataset is needed for both modes.")
+    joint_bounds = np.load(os.path.join(args.data_path, "joint_bounds.npy"))
+
     eipl_inference_handler = EiplInferenceHandler(loaded_model=model_sarnn, step_by_step=args.debug,
                                                   img_resize=args.img_size,
                                                   minmax=minmax,
-                                                  joint_bounds=np.array([0.1, 0.9]))  # TODO correct joint bounds??
-
+                                                  joint_bounds=joint_bounds,
+                                                  alpha=args.alpha,
+                                                  )
+    
     if args.offline:
-        # OFFLINE mode, overrides joint_bounds
-        if not args.data_path:
-            raise RuntimeError("Path to offline dataset is needed in offline mode.")
+        # OFFLINE mode
         eipl_inference_handler.run_offline_inference(data_path=args.data_path, load_index=args.idx)
     else:
         # ONLINE MODE!!
