@@ -188,7 +188,7 @@ class EiplInferenceHandler:
 
         # predict rnn
         print(f"input joints {joint_t}")
-        y_image, y_joint, _enc_pts, _dec_pts, state = self.eipl_model.forward(img_t, joint_t, self.eipl_model_state)
+        y_image, y_joint, _enc_pts, _dec_pts, self.eipl_model_state = self.eipl_model.forward(img_t, joint_t, self.eipl_model_state)
 
         # denormalization
         pred_image = tensor2numpy(y_image[0])  # first prediction in time
