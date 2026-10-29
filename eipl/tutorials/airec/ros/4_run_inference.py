@@ -233,7 +233,7 @@ class EiplInferenceHandler:
         self.joint_bounds = grasp_data._load_bounds()
 
         # Inference
-        for loop_ct in range(images):
+        for loop_ct in range(0, len(images)):
             # load data and normalization
             img_t = images[loop_ct]
 
