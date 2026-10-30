@@ -76,6 +76,7 @@ class EiplInferenceHandler:
         # Robot State
         self.current_joint_values_arm: np.ndarray = np.array([])
         self.current_hand_state: int = 0  # vanilla eipl sets open:0 and close:1
+        self.hand_predicted_value: float = 0.0
         self.current_rgb_image: None | np.ndarray = None
         self.last_y_image = None
         self.last_y_joint = None
@@ -175,12 +176,11 @@ class EiplInferenceHandler:
 
         # predict rnn
         print(f"input joints {joint_t}")
-        y_image, y_joint, _enc_pts, _dec_pts, state = self.eipl_model.forward(img_t, joint_t, self.eipl_model_state)
+        y_image, y_joint, _enc_pts, _dec_pts, self.eipl_model_state = self.eipl_model.forward(img_t, joint_t, self.eipl_model_state)
 
         # save predicted for next pass
         self.last_y_image = y_image.detach()
         self.last_y_joint = y_joint.detach()
-        self.eipl_model_state = state
 
         # denormalization
         pred_image = tensor2numpy(y_image[0])  # first prediction in time
@@ -189,6 +189,7 @@ class EiplInferenceHandler:
         pred_joint = tensor2numpy(y_joint[0])  # first prediction in time
         rospy.logdebug(f"Predicted value hand joint (not normalized):\n {pred_joint[-1]} \n")
         pred_joint = normalization(pred_joint, self.minmax, self.joint_bounds)
+        self.hand_predicted_value = float(pred_joint[-1])
         rospy.logdebug(f"Predicted value hand joint (normalized):\n {pred_joint[-1]} \n")
 
         if (pred_joint.shape != (8,)) or not np.all(np.isfinite(pred_joint)):
@@ -224,7 +225,7 @@ class EiplInferenceHandler:
         poses = _poses[load_index]
 
         # Inference
-        for loop_ct in range(len(images)):
+        for loop_ct in range(0, len(images)):
             # load data and normalization
             img_t = images[loop_ct]
 
@@ -233,7 +234,7 @@ class EiplInferenceHandler:
                     f"Waiting for joint state information from {self.topic_name_joint_state}")
                 rospy.sleep(0.1)
             assert (self.current_hand_state == 0 or self.current_hand_state == 1)
-            joints_and_hand = np.append(self.current_joint_values_arm, self.current_hand_state)
+            joints_and_hand = np.append(self.current_joint_values_arm, self.hand_predicted_value)
 
             # predict with EIPL
             self.run_inference(img_t=img_t, joint_t=joints_and_hand)
@@ -254,7 +255,7 @@ class EiplInferenceHandler:
                     f"Waiting for joint state information from {self.topic_name_joint_state}")
                 rospy.sleep(0.1)
                 continue
-            joints_and_hand = np.append(self.current_joint_values_arm, self.current_hand_state)
+            joints_and_hand = np.append(self.current_joint_values_arm, self.hand_predicted_value)
 
             # predict with EIPL
             self.run_inference(img_t=img_t, joint_t=joints_and_hand)
