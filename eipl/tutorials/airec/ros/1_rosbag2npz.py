@@ -42,7 +42,8 @@ for file in files:
         #"/torobo/head/sr300/camera/depth/image_rect_raw",
         "/torobo/head/sr300/camera/color/image_rect_color/compressed",
         "/m3t_estimated_poses",
-        "/m3t_image_mask/compressed"
+        "/m3t_image_mask/compressed",
+        "/torobo/joycon/data"
         
     ]
 
@@ -58,6 +59,7 @@ for file in files:
     # moth adjustments
     mask_list = []
     pose_list =[]
+    joycon_list =[]
 
     prev_finger = None
     finger_state = 0
@@ -117,6 +119,8 @@ for file in files:
                         pose_state = np.concatenate((pos_state, q_state), axis=0)
                         pose_list.append(pose_state)
 
+                    if topic == "/torobo/joycon/data":
+                        joycon_list.append(list(msg.axes) + list(msg.buttons))
                     break
 
         # Wait for the next interval
@@ -133,11 +137,17 @@ for file in files:
     depths = np.array(depth_list)
     masks = np.array(mask_list, dtype=np.uint8)
     poses = np.array(pose_list, dtype=np.float32)
+    joycons = np.array(joycon_list, dtype=np.float32)
 
     topic_list_len = [len(joints), len(images), len(finger), len(finger_state)]
     
     if any(["m3t" in t for t in topics]):
-        topic_list_len.extend([len(masks), len(poses)])
+        topic_list_len.extend([len(poses)])
+        if len(masks) > 0: 
+            topic_list_len.append(len(masks))
+
+    if len(joycons) > 0:
+        topic_list_len.append(len(joycons))
     # Get shorter lenght
     shorter_length = min(topic_list_len)
     max_length = max(topic_list_len)
@@ -163,10 +173,10 @@ for file in files:
     finger_state = finger_state[:shorter_length]
     masks = masks[:shorter_length]
     poses = poses[:shorter_length]
-
-
+    joycons = joycons[:shorter_length]
+    
     # Save
     np.savez(
         savename, joints=joints, finger=finger, finger_state=finger_state, 
-        images=images, depths =depths, poses=poses, masks=masks
+        images=images, depths =depths, poses=poses, masks=masks, joycons=joycons
     )
