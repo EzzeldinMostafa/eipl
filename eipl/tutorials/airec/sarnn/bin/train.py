@@ -47,6 +47,9 @@ parser.add_argument("--pos_as_state", action="store_true", help="Input the pose 
 parser.add_argument("--img_resize", type=int, help="additional image resize", default=64)
 args = parser.parse_args()
 
+#write joint bounds to args
+args.joint_bounds = np.load(os.path.join(args.path, "joint_bounds.npy")).tolist()
+
 # check args
 args = check_args(args)
 

@@ -31,7 +31,8 @@ params = restore_args(os.path.join(dir_name, "args.json"))
 minmax = [params["vmin"], params["vmax"]]
 grasp_data = SampleDownloader("airec", "grasp_bottle", img_format="HWC")
 images, joints = grasp_data.load_raw_data("test")
-joint_bounds = grasp_data.joint_bounds
+joint_bounds = np.array(params["joint_bounds"], dtype=np.float32)
+
 print(
     "images shape:{}, min={}, max={}".format(images.shape, images.min(), images.max())
 )

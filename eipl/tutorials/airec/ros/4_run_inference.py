@@ -299,6 +299,7 @@ def main():
         im_size=[args.img_size, args.img_size]
     )
     minmax = [params["vmin"], params["vmax"]]
+    joint_bounds = np.array(params["joint_bounds"], dtype=np.float32)
 
     # Load weights
     print("Loading model to CPU")
@@ -307,11 +308,6 @@ def main():
     model_sarnn.eval()
     model_sarnn.to("cpu")
     print("Loaded model")
-
-    # both modes require training data to extract joint bounds
-    if not args.data_path:
-        raise RuntimeError("Path to offline dataset is needed for both modes.")
-    joint_bounds = np.load(os.path.join(args.data_path, "joint_bounds.npy"))
 
     eipl_inference_handler = EiplInferenceHandler(loaded_model=model_sarnn, step_by_step=args.debug,
                                                   img_resize=args.img_size,
@@ -322,6 +318,8 @@ def main():
     
     if args.offline:
         # OFFLINE mode
+        if not args.data_path:
+            raise RuntimeError("Path to offline dataset is needed in offline mode.")
         eipl_inference_handler.run_offline_inference(data_path=args.data_path, load_index=args.idx)
     else:
         # ONLINE MODE!!

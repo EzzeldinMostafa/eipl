@@ -67,7 +67,8 @@ _images, _joints, masks, poses = grasp_data.load_raw_data("test")
 _images = resize_img(_images, (args.img_resize, args.img_resize))
 images = _images[idx]
 joints = _joints[idx]
-joint_bounds = grasp_data.joint_bounds
+joint_bounds = np.array(params["joint_bounds"], dtype=np.float32)
+
 print(
     "images shape:{}, min={}, max={}".format(images.shape, images.min(), images.max())
 )
