@@ -135,7 +135,14 @@ def cos_interpolation(data, step=20, expand_dims=False):
             continue
 
         x_latent = (1 - np.cos(t * np.pi)) / 2
-        data[i - step + 1 : i + step + 1] = x_latent
+
+        start_index = i - step + 1
+        end_index = start_index + len(x_latent)
+
+        start_clipped = max(start_index, 0)
+        end_clipped = min(end_index, len(data))
+        
+        data[start_clipped:end_clipped] = x_latent[start_clipped-start_index:end_clipped-start_index]
 
     if expand_dims:
         data = np.expand_dims(data, axis=-1)
