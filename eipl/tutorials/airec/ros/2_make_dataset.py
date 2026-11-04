@@ -26,13 +26,13 @@ def load_data(dir):
         print(filename)
         npz_data = np.load(filename, allow_pickle=True)
         images.append(resize_img(npz_data["images"], (128, 128)))
-        finger_state = cos_interpolation(npz_data["finger_state"], expand_dims=True)
+        finger_state = cos_interpolation(npz_data["joycons"][:, 22], expand_dims=True)
         # shape 8 for AIREC 7 arm + one for the gripper like hand
         _joints = np.concatenate((npz_data["joints"], finger_state), axis=-1)
         joints.append(_joints)
         seq_length.append(len(_joints))
 
-        if npz_data["masks"].shape[1] != 0: 
+        if len(npz_data["masks"]) > 0: 
             masks.append(resize_img(npz_data["masks"], (128, 128)))
         if npz_data["poses"].shape[1] != 0:
             poses.append(npz_data["poses"]) 
