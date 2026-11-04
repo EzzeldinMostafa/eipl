@@ -46,6 +46,7 @@ n_trials = images.shape[0] #how many experiments were done
 
 # normalized joints
 minmax = [0.1, 0.9]
+JOINT_LABELS = [f"J{i}"for i in range(1, 8)] + ["hand"]
 norm_joints = normalization(joints, joint_bounds, minmax)
 
 # print data information
@@ -77,7 +78,8 @@ def plot_sequence(time_step, plot_ind=None, i_seq=0, img_size=128):
     ax[plot_ind][1].plot(joints[i_seq], linestyle="dashed", c="k")
 
     for joint_idx in range(8):
-        ax[plot_ind][1].plot(np.arange(time_step + 1), joints[i_seq, : time_step + 1, joint_idx])
+        ax[plot_ind][1].plot(np.arange(time_step + 1), joints[i_seq, : time_step + 1, joint_idx], label=JOINT_LABELS[joint_idx])
+    ax[plot_ind][1].legend(loc="upper right", fontsize=8, ncol=2)
     ax[plot_ind][1].set_xlabel("Step")
     ax[plot_ind][1].set_title("Joint angles")
 
@@ -114,7 +116,7 @@ def anim_update(i, idx, img_size=128, seq_len=1, run_indices=[0]):
 seq_len = min(args.seq_len, n_trials)
 n_plots = int(np.ceil(n_trials/seq_len))
 
-input_folder_name = Path(args.path).stem
+input_folder_name = f"{Path(args.path).parent.name}_{Path(args.path).name}" 
 
 if n_plots == 1:
     #create only 1 file
